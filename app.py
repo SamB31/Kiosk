@@ -11,7 +11,7 @@ import os
 
 # Create a Flask app instance
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://your_username:your_password@localhost:5433/your_database_name'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:2107@localhost:5433/postgres'
 app.secret_key = 'fsdjfsldkfjskldjflksdjflksdjf' 
 db = SQLAlchemy(app)
 
@@ -49,7 +49,7 @@ class Historical(db.Model):
     ID = db.Column(db.Integer, primary_key=True)
     studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
     what = db.Column(db.String(120), nullable=False)
-    when = db.Column(db.DateTime, default=datetime.now())
+    when = db.Column(db.DateTime)
 
 
 def write_to_log(message, category):
@@ -161,7 +161,7 @@ def send_charge_email():
 
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 08:58:00') # assuming you want it daily at 5pm 
+scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 17:00:00') # assuming you want it daily at 5pm 
 #scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 17:00:00') # assuming you want it daily at 5pm
 scheduler.start()
         
@@ -178,7 +178,7 @@ def send_confirmation_email(studentID):
                         sender="sblanton@mrapats.com",
                         recipients=recipients)
             
-            msg.body = f"***This is an automated email***\n\nYou have borrowed a {str.lower(borrower.what)} and a your my backpack account will be charged at 5pm. If the {str.lower(borrower.what)} is not returned befor 5pm you will be charged for another day."
+            msg.body = f"***This is an automated email***\n\nYou have borrowed a {str.lower(borrower.what)} and a your my backpack account will be charged at 5pm. If the {str.lower(borrower.what)} is not returned before 5pm you will be charged for another day."
             
             # Send the email
             mail.send(msg)
@@ -252,6 +252,13 @@ def add_borrower():
 
         student = Students.query.filter_by(email=email).first()
 
+        if not student:
+            flash('Student not found. Please use an MRA provided email address.', 'danger')
+            return redirect('/')
+        
+
+        
+
         borrower = Borrower.query.filter_by(studentID=student.studentID).first()
 
         if borrower:
@@ -259,13 +266,11 @@ def add_borrower():
             return redirect('/')
 
         # If student does not exist in Students table
-        if not student:
-            flash('Student not found. Please ensure you are registered.', 'danger')
-            return redirect('/')
+
 
         # If student exists
         new_borrower = Borrower(what=what, studentID=student.studentID, turned_in=False)
-        historical = Historical(what=what, studentID=student.studentID)
+        historical = Historical(what=what, studentID=student.studentID, when=datetime.now())
         
         try:
             db.session.add(new_borrower)
@@ -285,7 +290,6 @@ def borrower():
     borrowers = Borrower.query.all()
     if request.method == 'POST':
         borrowerID = request.form['borrowerID'] 
-        print(borrowerID)
         borrower = db.session.get(Borrower, borrowerID)
         db.session.delete(borrower)
         try:
@@ -355,7 +359,7 @@ def replace_id():
             return redirect('/')
         
         new_card = Card(what="ID", studentID=student.studentID)
-        historical = Historical(what="ID", studentID=student.studentID)
+        historical = Historical(what="ID", studentID=student.studentID, when=datetime.now())
         db.session.add(historical)
         db.session.add(new_card)
 
@@ -391,4 +395,4 @@ def student_details(studentID):
 
 # Run the app when this script is executed
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()

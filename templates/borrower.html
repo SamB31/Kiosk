@@ -34,7 +34,7 @@
                     
                 </tr>
             </thead>
-            <form method="post">
+            
             <tbody>
                 {% for borrower in borrowers %}
                 <tr>
@@ -42,14 +42,16 @@
                     <td>{{ borrower.student.firstname }} {{ borrower.student.lastname }}</td>
                     <td class="d-flex justify-content-between align-items-center">
                         {{ borrower.turned_in }}
+                        <form method="post">
                         <input type="text" value="{{ borrower.borrowerID }}" name="borrowerID" style="display: none;">
                         <button type="submit" class="close"><span aria-hidden="true">&times;</span></button>
+                        </form>
                     </td>
                     
                 </tr>
                 {% endfor %}
             </tbody>
-            </form>
+            
         </table>
     </div>
     
