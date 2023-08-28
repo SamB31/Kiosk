@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from flask_apscheduler import APScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
 import psycopg2
 import csv
@@ -158,10 +159,10 @@ def send_charge_email():
             except Exception as e:
                 write_to_log(f"{time}-{str(e)}", "error")
 
-
+cron_trigger = CronTrigger(day_of_week='mon-fri', hour=17, minute=0)
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 17:00:00', weekdays="0-4") # assuming you want it daily at 5pm 
+scheduler.add_job(func=send_charge_email, trigger=cron_trigger) # assuming you want it daily at 5pm 
 #scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 17:00:00') # assuming you want it daily at 5pm
 scheduler.start()
         
