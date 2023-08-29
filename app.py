@@ -1,10 +1,8 @@
 from flask import Flask, redirect, render_template, request, flash, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
-from flask_apscheduler import APScheduler
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
+from celery import Celery
 import psycopg2
 import csv
 import threading
@@ -24,6 +22,13 @@ app.config['MAIL_USE_TLS'] = False
 app.config['MAIL_USE_SSL'] = True
 
 mail = Mail(app)
+
+
+app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
+app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
+
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
 
 time = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
@@ -68,7 +73,7 @@ def write_to_log(message, category):
     with open(log_file_path, 'a') as file:
         file.write(f"{message}\n")
 
-
+@celery.task
 def send_charge_email():
     with app.app_context():
         # Fetch all borrowers
@@ -104,7 +109,7 @@ def send_charge_email():
                 db.session.commit()
             except Exception as e:
                 write_to_log(f"{time}-{str(e)}", "error")
-                db.session.rollback()
+                
         
         
         summary_str = "\n".join(summary_list)
@@ -145,7 +150,7 @@ def send_charge_email():
                 db.session.commit()
             except Exception as e:
                 write_to_log(f"{time}-{str(e)}", "error")
-                db.session.rollback()
+                
 
         if recipients_not_turned_in:
             msg2 = Message("Borrowed item not returned",
@@ -158,15 +163,9 @@ def send_charge_email():
                 mail.send(msg2) 
             except Exception as e:
                 write_to_log(f"{time}-{str(e)}", "error")
-
-cron_trigger = CronTrigger(day_of_week='mon-fri', hour=17, minute=0)
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_charge_email, trigger=cron_trigger) # assuming you want it daily at 5pm 
-#scheduler.add_job(func=send_charge_email, trigger="interval", days=1, start_date='2023-08-22 17:00:00') # assuming you want it daily at 5pm
-scheduler.start()
+    
         
-
+@celery.task
 def send_confirmation_email(studentID):
     with app.app_context():
         try:
@@ -187,10 +186,6 @@ def send_confirmation_email(studentID):
             # Log the error message
             write_to_log(f"{time}-{str(e)}", "error")
 
-
-def send_email_in_background(studentID):
-    email_thread = threading.Thread(target=send_confirmation_email, args=(studentID,))
-    email_thread.start()
 
 
 def load_students_from_csv(file_path):
@@ -223,7 +218,7 @@ def load_students_from_csv(file_path):
                 flash('Students loaded successfully!', 'success')
             except Exception as e:
                 write_to_log(f"{time}-{str(e)}", "error")
-                db.session.rollback()
+                
                 flash('Error occurred while loading students.', 'danger')
 
 
@@ -277,7 +272,7 @@ def add_borrower():
             db.session.add(new_borrower)
             db.session.add(historical)
             db.session.commit()
-            send_email_in_background(student.studentID)
+            send_confirmation_email.delay(student.studentID)
             flash('Item borrowed successfully', 'success')
             return redirect('/')
         except Exception as e:
@@ -288,7 +283,10 @@ def add_borrower():
 
 @app.route('/borrower', methods=['POST','GET'])
 def borrower():
-    borrowers = Borrower.query.all()
+    try:
+        borrowers = Borrower.query.all()
+    except Exception as e:
+        write_to_log(f"{time}-{str(e)}", "error")
     if request.method == 'POST':
         borrowerID = request.form['borrowerID'] 
         borrower = db.session.get(Borrower, borrowerID)
@@ -396,4 +394,4 @@ def student_details(studentID):
 
 # Run the app when this script is executed
 if __name__ == '__main__':
-    app.run()
+    app.run(host="10.10.15.112", port=7000)
