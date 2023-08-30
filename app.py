@@ -186,6 +186,27 @@ def send_confirmation_email(studentID):
             # Log the error message
             write_to_log(f"{time}-{str(e)}", "error")
 
+@celery.task
+def notify_tech(studentID):
+    with app.app_context():
+        try:
+            student = Students.query.filter_by(studentID=studentID).first()
+
+            # Craft the email message
+            recipients = ["techsupport@mrapats.org"]
+            
+            msg = Message(f"{borrower.what} ID Order",
+                        sender="sblanton@mrapats.com",
+                        recipients=recipients)
+            
+            msg.body = f"***This is an automated email***\n\n{student.firstname} {student.lastname} has ordered an ID."
+            
+            # Send the email
+            mail.send(msg)
+        except Exception as e:
+            # Log the error message
+            write_to_log(f"{time}-{str(e)}", "error")
+
 
 
 def load_students_from_csv(file_path):
@@ -365,6 +386,7 @@ def replace_id():
         try:
             db.session.commit()
             flash("Your ID has been ordered. Come pick it up later today.", 'success')
+            notify_tech.delay(student.studentID)
             return redirect('/')
             
         except Exception as e:
