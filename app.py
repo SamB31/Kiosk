@@ -190,12 +190,12 @@ def send_confirmation_email(studentID):
 def notify_tech(studentID):
     with app.app_context():
         try:
-            student = Students.query.filter_by(studentID=studentID).first()
+            student = Students.query.get(studentID)
 
             # Craft the email message
             recipients = ["techsupport@mrapats.org"]
             
-            msg = Message(f"{borrower.what} ID Order",
+            msg = Message(f"ID Order",
                         sender="sblanton@mrapats.com",
                         recipients=recipients)
             
@@ -382,11 +382,11 @@ def replace_id():
         historical = Historical(what="ID", studentID=student.studentID, when=datetime.now())
         db.session.add(historical)
         db.session.add(new_card)
-
+        notify_tech.delay(student.studentID)
         try:
             db.session.commit()
             flash("Your ID has been ordered. Come pick it up later today.", 'success')
-            notify_tech.delay(student.studentID)
+            
             return redirect('/')
             
         except Exception as e:
