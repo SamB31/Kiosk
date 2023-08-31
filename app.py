@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from datetime import datetime
 from celery import Celery
+import subprocess
 import psycopg2
 import csv
 import threading
@@ -10,7 +11,8 @@ import os
 
 # Create a Flask app instance
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:2107@localhost:5433/postgres'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mydatabase.db'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:2107@localhost:5433/postgres'
 app.secret_key = 'fsdjfsldkfjskldjflksdjflksdjf' 
 db = SQLAlchemy(app)
 
@@ -51,11 +53,53 @@ class Card(db.Model):
     what = db.Column(db.String(120), nullable=False)
     studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
 
+class Print(db.Model):
+    ID = db.Column(db.Integer, primary_key=True)
+    what = db.Column(db.String(120), nullable=False)
+    count = db.Column(db.Integer)
+    studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
+
 class Historical(db.Model): 
     ID = db.Column(db.Integer, primary_key=True)
     studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
     what = db.Column(db.String(120), nullable=False)
     when = db.Column(db.DateTime)
+
+
+def print_file(filename, printer, color=True, page_count=None):
+    """
+    Print a given file.
+
+    Args:
+    - filename (str): Path to the file to be printed.
+    - printer (str): Name of the printer to print to.
+    - color (bool): True for color print, False for black and white.
+    - page_count (int): Number of pages to print starting from the first page.
+
+    Returns:
+    - None
+    """
+    print(page_count)
+    # Convert the boolean value of color to the appropriate lp option
+    color_option = "ColorModel=Color" if color else "ColorModel=Gray"
+    page_range = f'page-ranges=1-{page_count}' if page_count > 1 else 'page-ranges=1'
+
+    cmd = ["lp", "-o", page_range, "-d", printer, "-o", color_option, filename]
+    print(cmd)
+    
+
+    
+    try:
+        # Send the print command
+        subprocess.run(cmd, check=True)
+        print(f"Sent {filename} to the {printer}.")
+        flash("File Printed Successfully", 'success')
+    except subprocess.CalledProcessError as e:
+        flash(f"Error: {e}", 'danger')
+        print(f"Error printing {filename} to the {printer}. Error code: {e.returncode}")
+    except FileNotFoundError:
+        flash(f"Error: {e}", 'danger')
+        print("lp command not found. Ensure CUPS is installed and in your PATH.")
 
 
 def write_to_log(message, category):
@@ -414,6 +458,47 @@ def student_details(studentID):
     return render_template('student_details.html', student=student, history=history)
 
 
+@app.route('/print', methods=['GET', 'POST'])
+def print_view():
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        printer_choice = request.form.get('printer')
+        pages_to_print = int(request.form.get('pages'))
+        color_option = True if request.form.get('colorOption') == 'color' else False
+        file = request.files.get('file')
+
+        student = Students.query.filter_by(email=email).first()
+
+        if not student:
+            flash('Student not found. Please use an MRA provided email address.', 'danger')
+            return redirect('/print')
+        try:
+            upload_dir = "UPLOADS"
+
+            if not os.path.exists(upload_dir):
+                os.makedirs(upload_dir)
+
+            filepath = os.path.join(upload_dir, file.filename)
+            file.save(filepath)
+            
+
+            # Print the file
+            print_file(filepath, printer_choice, color_option, pages_to_print)
+
+            # Remove the file after printing (optional)
+            os.remove(filepath)
+
+            
+
+
+        except Exception as e:
+            write_to_log(f"{time}-{str(e)}", "error")
+            flash(f"Error: {e}", 'danger')
+
+    return render_template('print.html')
+
 # Run the app when this script is executed
 if __name__ == '__main__':
-    app.run(host="10.10.15.112", port=7000)
+    #app.run(host="10.10.15.112", port=7000)
+    app.run(debug=True)
