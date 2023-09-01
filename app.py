@@ -4,15 +4,15 @@ from flask_mail import Mail, Message
 from datetime import datetime
 from celery import Celery
 import subprocess
-import psycopg2
+#import psycopg2
 import csv
 import threading
 import os
 
 # Create a Flask app instance
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mydatabase.db'
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:2107@localhost:5433/postgres'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mydatabase.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:2107@localhost:5433/postgres'
 app.secret_key = 'fsdjfsldkfjskldjflksdjflksdjf' 
 db = SQLAlchemy(app)
 
@@ -41,6 +41,7 @@ class Students(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     borrowings = db.relationship('Borrower', backref='student', lazy=True)
     card = db.relationship('Card', backref='student', lazy=True)
+    print = db.relationship('Print', backref='student', lazy=True)
 
 class Borrower(db.Model):
     borrowerID = db.Column(db.Integer, primary_key=True)
@@ -56,7 +57,7 @@ class Card(db.Model):
 class Print(db.Model):
     ID = db.Column(db.Integer, primary_key=True)
     what = db.Column(db.String(120), nullable=False)
-    count = db.Column(db.Integer)
+    price = db.Column(db.Integer)
     studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
 
 class Historical(db.Model): 
@@ -123,8 +124,10 @@ def send_charge_email():
         # Fetch all borrowers
         borrowers = Borrower.query.all()
         cards = Card.query.all()
+        printers = Print.query.all()
+        print(printers)
         
-        if not borrowers and cards:
+        if not borrowers and not cards and not printers:
             print('Nothing to send')
             return
         
@@ -148,6 +151,20 @@ def send_charge_email():
                 summary_list.append(f"{student.firstname} {student.lastname} - {replace_id}: {charge}")
 
                 db.session.delete(card)
+
+            try:
+                db.session.commit()
+            except Exception as e:
+                write_to_log(f"{time}-{str(e)}", "error")
+
+        if printers:
+            for printer in printers:
+                student = Students.query.filter_by(studentID=printer.studentID).first()
+
+
+                summary_list.append(f"{student.firstname} {student.lastname} - {printer.what}: {printer.price}")
+
+                db.session.delete(printer)
 
             try:
                 db.session.commit()
@@ -252,7 +269,6 @@ def notify_tech(studentID):
             write_to_log(f"{time}-{str(e)}", "error")
 
 
-
 def load_students_from_csv(file_path):
     with app.app_context():  # ensure you're in the app context if this function is run outside of a request context
         with open(file_path, 'r') as file:
@@ -292,7 +308,6 @@ def startup():
     db.create_all()
     load_students_from_csv('students.csv')
     return redirect('/')
- 
 
 @app.route('/')
 def hello_world():
@@ -457,6 +472,27 @@ def student_details(studentID):
 
     return render_template('student_details.html', student=student, history=history)
 
+@app.route('/printers', methods=['POST','GET'])
+def printers_view():
+    try:
+        printers = Print.query.all()
+    except Exception as e:
+        write_to_log(f"{time}-{str(e)}", "error")
+    if request.method == 'POST':
+        printID = request.form['printID'] 
+        printer = db.session.get(Print, printID)
+        db.session.delete(printer)
+        try:
+            db.session.commit()
+            flash('Student absolved', 'success')
+            return redirect('/printers')
+        except Exception as e:
+            write_to_log(f"{time}-{str(e)}", "error")
+            flash('Error occurred. Please try again.', 'danger')
+            return redirect('/printers')
+    
+    return render_template('printers.html', printers=printers)
+
 
 @app.route('/print', methods=['GET', 'POST'])
 def print_view():
@@ -489,7 +525,22 @@ def print_view():
             # Remove the file after printing (optional)
             os.remove(filepath)
 
+            if color_option:
+                price = pages_to_print * .75
+
+            if not color_option:
+                price = pages_to_print * .25
             
+            new_print = Print(what="Print", price=price, studentID=student.studentID)
+            
+            try:
+                db.session.add(new_print)
+                db.session.commit()
+
+            except Exception as e:
+                write_to_log(f"{time}-{str(e)}", "error")
+                flash('Error occurred. Please try again.', 'danger')
+                return redirect('/print')
 
 
         except Exception as e:
@@ -500,5 +551,5 @@ def print_view():
 
 # Run the app when this script is executed
 if __name__ == '__main__':
-    #app.run(host="10.10.15.112", port=7000)
-    app.run(debug=True)
+    app.run(host="10.10.15.112", port=7000)
+    #app.run(debug=True)
