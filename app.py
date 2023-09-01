@@ -57,7 +57,7 @@ class Card(db.Model):
 class Print(db.Model):
     ID = db.Column(db.Integer, primary_key=True)
     what = db.Column(db.String(120), nullable=False)
-    price = db.Column(db.Integer)
+    price = db.Column(db.Float)
     studentID = db.Column(db.Integer, db.ForeignKey('students.studentID'))
 
 class Historical(db.Model): 
@@ -524,12 +524,14 @@ def print_view():
 
             # Remove the file after printing (optional)
             os.remove(filepath)
-
+            print(color_option)
             if color_option:
                 price = pages_to_print * .75
 
             if not color_option:
                 price = pages_to_print * .25
+
+            print(price)
             
             new_print = Print(what="Print", price=price, studentID=student.studentID)
             
